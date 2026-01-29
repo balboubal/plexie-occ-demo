@@ -1,0 +1,57 @@
+# PlexIE AI Backend Requirements
+# Install with: pip install -r requirements.txt
+
+# Core
+fastapi>=0.109.0
+uvicorn[standard]>=0.27.0
+websockets>=12.0
+
+# AI/ML - P2PNet (preferred for dense crowds)
+torch>=2.0.0
+torchvision>=0.15.0
+pillow>=10.0.0
+scipy>=1.10.0
+matplotlib>=3.7.0
+
+# AI/ML - YOLO (fallback for simpler setups)
+ultralytics>=8.3.0  # YOLOv8/YOLOv11 support
+opencv-python>=4.9.0
+numpy>=1.24.0
+
+# ============================================
+# OPTIONAL ACCELERATORS (Recommended!)
+# ============================================
+
+# ONNX Runtime - 2-3x faster inference (works on all platforms)
+onnxruntime>=1.16.0
+
+# Numba - JIT compilation for faster grid calculations
+numba>=0.58.0
+
+# ============================================
+# GPU-SPECIFIC (Install ONE based on your GPU)
+# ============================================
+
+# For AMD GPUs (Windows):
+# pip install torch-directml
+
+# For NVIDIA GPUs (better ONNX performance):
+# pip install onnxruntime-gpu
+
+# ============================================
+# INSTALL COMMANDS BY PLATFORM
+# ============================================
+# 
+# Windows + AMD GPU:
+#   pip install -r requirements.txt torch-directml
+#
+# Windows + NVIDIA GPU:
+#   pip install -r requirements.txt onnxruntime-gpu
+#   (remove onnxruntime first: pip uninstall onnxruntime)
+#
+# Linux + NVIDIA GPU:
+#   pip install -r requirements.txt onnxruntime-gpu
+#
+# Mac (CPU only):
+#   pip install -r requirements.txt
+#
