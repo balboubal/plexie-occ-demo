@@ -13,21 +13,9 @@ backend/checkpoints/
 *.onnx
 
 # Video files (too large)
-*.mp4
-*.avi
-*.mov
-*.mkv
 
 # Generated files
-backend/density/
-backend/output/
-backend/vis/
-dist/
-*.zip
 
 # Settings
-plexie-settings.json
 
 # OS
-.DS_Store
-Thumbs.db
