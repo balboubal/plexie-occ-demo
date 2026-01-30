@@ -1,33 +1,49 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef } from 'react'
 
-// Configuration - must match backend
-const API_URL = 'http://localhost:8000'
-const WS_URL = 'ws://localhost:8000/ws'
+// Video configuration - list your videos here
+const AVAILABLE_VIDEOS = [
+  'video1.mp4',
+  'video2.mp4',
+  'video3.mp4',
+  'video4.mp4',
+  'video5.mp4'
+]
+
+// Detection grid configuration
 const GRID_ROWS = 4
 const GRID_COLS = 4
-const PROCESS_WIDTH = 480
-const PROCESS_HEIGHT = 352
 
 // ============================================
-// Camera Feed Component - Simple approach
+// Camera Feed Component
 // ============================================
-function CameraFeed({ cameraId, videoName, detection, onStop }) {
-  const videoRef = useRef(null)
+function CameraFeed({ cameraId, videoName, plexieEnabled, onStop }) {
+  const annotatedVideoRef = useRef(null)
+  const cleanVideoRef = useRef(null)
   const canvasRef = useRef(null)
   const [isPlaying, setIsPlaying] = useState(false)
 
-  // Handle video ready to play
-  const handleCanPlay = () => {
-    const video = videoRef.current
-    if (!video || isPlaying) return
-    video.play()
-    setIsPlaying(true)
-  }
+  // Start both videos when component mounts or video changes
+  useEffect(() => {
+    if (!videoName) return
 
-  // Draw detection overlay
+    const annotatedVideo = annotatedVideoRef.current
+    const cleanVideo = cleanVideoRef.current
+
+    if (annotatedVideo && cleanVideo) {
+      // Play both videos
+      Promise.all([
+        annotatedVideo.play().catch(e => console.log('Annotated play error:', e)),
+        cleanVideo.play().catch(e => console.log('Clean play error:', e))
+      ]).then(() => {
+        setIsPlaying(true)
+      })
+    }
+  }, [videoName])
+
+  // Draw overlay on canvas
   useEffect(() => {
     const canvas = canvasRef.current
-    const video = videoRef.current
+    const video = plexieEnabled ? annotatedVideoRef.current : cleanVideoRef.current
     if (!canvas || !video) return
 
     const ctx = canvas.getContext('2d')
@@ -38,100 +54,66 @@ function CameraFeed({ cameraId, videoName, detection, onStop }) {
     
     ctx.clearRect(0, 0, canvas.width, canvas.height)
     
-    if (!detection || !isPlaying) {
-      // Show waiting message
+    if (!isPlaying) {
+      // Show loading message
       ctx.fillStyle = 'rgba(0,0,0,0.5)'
       ctx.fillRect(0, 0, canvas.width, canvas.height)
       ctx.fillStyle = '#00ff00'
       ctx.font = 'bold 14px monospace'
       ctx.textAlign = 'center'
-      ctx.fillText(isPlaying ? 'Waiting for detection...' : 'Loading...', canvas.width/2, canvas.height/2)
+      ctx.fillText('Loading...', canvas.width/2, canvas.height/2)
       return
     }
     
-    // Scale factors
-    const scaleX = canvas.width / PROCESS_WIDTH
-    const scaleY = canvas.height / PROCESS_HEIGHT
-    const cellW = canvas.width / GRID_COLS
-    const cellH = canvas.height / GRID_ROWS
-    
-    // Draw grid (subtle)
-    ctx.strokeStyle = 'rgba(0,255,0,0.2)'
-    ctx.lineWidth = 1
-    for (let i = 1; i < GRID_ROWS; i++) {
-      ctx.beginPath()
-      ctx.moveTo(0, i * cellH)
-      ctx.lineTo(canvas.width, i * cellH)
-      ctx.stroke()
-    }
-    for (let j = 1; j < GRID_COLS; j++) {
-      ctx.beginPath()
-      ctx.moveTo(j * cellW, 0)
-      ctx.lineTo(j * cellW, canvas.height)
-      ctx.stroke()
-    }
-    
-    // Draw density heatmap
-    if (detection.grid_counts) {
-      const maxCount = Math.max(...detection.grid_counts.flat(), 1)
-      for (let r = 0; r < GRID_ROWS; r++) {
-        for (let c = 0; c < GRID_COLS; c++) {
-          const count = detection.grid_counts[r][c]
-          if (count > 0) {
-            const intensity = count / maxCount
-            // Green to yellow to red gradient
-            const r_color = Math.min(255, intensity * 2 * 255)
-            const g_color = Math.min(255, (1 - intensity) * 2 * 255)
-            ctx.fillStyle = `rgba(${r_color},${g_color},0,${intensity * 0.3})`
-            ctx.fillRect(c * cellW + 1, r * cellH + 1, cellW - 2, cellH - 2)
-          }
-        }
+    // Only show overlay when PlexIE is ON
+    if (plexieEnabled) {
+      const cellW = canvas.width / GRID_COLS
+      const cellH = canvas.height / GRID_ROWS
+      
+      // Draw subtle grid
+      ctx.strokeStyle = 'rgba(0,255,0,0.2)'
+      ctx.lineWidth = 1
+      for (let i = 1; i < GRID_ROWS; i++) {
+        ctx.beginPath()
+        ctx.moveTo(0, i * cellH)
+        ctx.lineTo(canvas.width, i * cellH)
+        ctx.stroke()
       }
+      for (let j = 1; j < GRID_COLS; j++) {
+        ctx.beginPath()
+        ctx.moveTo(j * cellW, 0)
+        ctx.lineTo(j * cellW, canvas.height)
+        ctx.stroke()
+      }
+      
+      // Draw sample detection info
+      ctx.fillStyle = 'rgba(0,255,0,0.8)'
+      ctx.font = 'bold 12px monospace'
+      ctx.textAlign = 'left'
+      ctx.fillText('PlexIE Active', 10, 25)
     }
     
-    // Draw hotspot highlight
-    if (detection.hotspot && detection.hotspot.count > 0) {
-      const { row, col, density } = detection.hotspot
-      ctx.strokeStyle = density > 5 ? '#ff0000' : density > 3 ? '#ffaa00' : '#00ff00'
-      ctx.lineWidth = 3
-      ctx.strokeRect(col * cellW + 2, row * cellH + 2, cellW - 4, cellH - 4)
-    }
-    
-    // Draw detection points (green dots)
-    ctx.fillStyle = '#00ff00'
-    ctx.shadowColor = '#00ff00'
-    ctx.shadowBlur = 8
-    for (const pt of detection.points || []) {
-      const x = pt[0] * scaleX
-      const y = pt[1] * scaleY
-      ctx.beginPath()
-      ctx.arc(x, y, 5, 0, Math.PI * 2)
-      ctx.fill()
-    }
-    ctx.shadowBlur = 0
-    
-  }, [detection, isPlaying])
+  }, [isPlaying, plexieEnabled])
 
   // Handle resize
   useEffect(() => {
     const handleResize = () => {
-      if (canvasRef.current && videoRef.current) {
-        const rect = videoRef.current.getBoundingClientRect()
-        canvasRef.current.width = rect.width
-        canvasRef.current.height = rect.height
+      if (canvasRef.current) {
+        const video = plexieEnabled ? annotatedVideoRef.current : cleanVideoRef.current
+        if (video) {
+          const rect = video.getBoundingClientRect()
+          canvasRef.current.width = rect.width
+          canvasRef.current.height = rect.height
+        }
       }
     }
     window.addEventListener('resize', handleResize)
     return () => window.removeEventListener('resize', handleResize)
-  }, [])
+  }, [plexieEnabled])
 
-  const densityLevel = detection?.density > 5 ? 'critical' : 
-                       detection?.density > 3 ? 'warning' : 'normal'
-  const densityColor = {
-    critical: 'text-red-500 animate-pulse',
-    warning: 'text-yellow-400',
-    normal: 'text-green-400'
-  }[densityLevel]
+  // Construct video paths
+  const annotatedPath = videoName ? `/videos/annotated/${videoName}` : null
+  const cleanPath = videoName ? `/videos/clean/${videoName}` : null
 
   return (
     <div className="bg-gray-900 rounded-lg overflow-hidden shadow-xl border border-gray-700">
@@ -140,33 +122,47 @@ function CameraFeed({ cameraId, videoName, detection, onStop }) {
         <div className="flex items-center gap-2">
           <div className={`w-2 h-2 rounded-full ${isPlaying ? 'bg-green-500 animate-pulse' : 'bg-yellow-500'}`} />
           <span className="text-white font-bold">CAM {cameraId + 1}</span>
-          <span className="text-gray-500 text-xs">{videoName}</span>
+          <span className="text-gray-500 text-xs">{videoName || 'No video'}</span>
         </div>
-        {detection && (
-          <div className="flex gap-3 text-xs font-mono">
-            <span className="text-green-400">{detection.count} <span className="text-gray-500">ppl</span></span>
-            <span className={densityColor}>{detection.density} <span className="text-gray-500">p/m2</span></span>
-            <span className="text-blue-400">{detection.inference_ms}<span className="text-gray-500">ms</span></span>
-          </div>
-        )}
+        <div className="flex gap-3 text-xs font-mono">
+          <span className={`${plexieEnabled ? 'text-green-400' : 'text-gray-500'}`}>
+            {plexieEnabled ? 'PlexIE ON' : 'PlexIE OFF'}
+          </span>
+        </div>
       </div>
       
-      {/* Video + Canvas */}
-      <div className="relative aspect-video bg-black">
-        {videoName ? (
+      {/* Video Container with both videos */}
+      <div className="relative bg-black" style={{ aspectRatio: '16/10' }}>
+        {annotatedPath && cleanPath ? (
           <>
+            {/* Annotated Video - visible when PlexIE is ON */}
             <video
-              ref={videoRef}
-              src={`${API_URL}/videos/${videoName}`}
-              className="w-full h-full object-cover"
+              ref={annotatedVideoRef}
+              src={annotatedPath}
+              className={`w-full h-full object-contain absolute inset-0 transition-opacity duration-300 ${
+                plexieEnabled ? 'opacity-100 z-10' : 'opacity-0 z-0'
+              }`}
               loop
               muted
               playsInline
-              onCanPlay={handleCanPlay}
             />
+            
+            {/* Clean Video - visible when PlexIE is OFF */}
+            <video
+              ref={cleanVideoRef}
+              src={cleanPath}
+              className={`w-full h-full object-contain absolute inset-0 transition-opacity duration-300 ${
+                !plexieEnabled ? 'opacity-100 z-10' : 'opacity-0 z-0'
+              }`}
+              loop
+              muted
+              playsInline
+            />
+            
+            {/* Canvas overlay */}
             <canvas
               ref={canvasRef}
-              className="absolute inset-0 w-full h-full pointer-events-none"
+              className="absolute inset-0 w-full h-full pointer-events-none z-20"
             />
           </>
         ) : (
@@ -179,8 +175,7 @@ function CameraFeed({ cameraId, videoName, detection, onStop }) {
       {/* Footer */}
       <div className="bg-gray-800 px-3 py-1.5 flex justify-between items-center text-xs">
         <div className="text-gray-500">
-          {isPlaying ? 'Live' : 'Loading...'}
-          {detection && ` | Frame ${detection.frame_idx}`}
+          {isPlaying ? 'Playing' : 'Stopped'}
         </div>
         {videoName && (
           <button 
@@ -196,107 +191,27 @@ function CameraFeed({ cameraId, videoName, detection, onStop }) {
 }
 
 // ============================================
-// Stats Panel
-// ============================================
-function StatsPanel({ detections, deviceType, isConnected }) {
-  const detectionsArray = Object.values(detections)
-  const totalPeople = detectionsArray.reduce((sum, d) => sum + (d?.count || 0), 0)
-  const maxDensity = Math.max(...detectionsArray.map(d => d?.density || 0), 0)
-  const avgInference = detectionsArray.length > 0 
-    ? detectionsArray.reduce((sum, d) => sum + (d?.inference_ms || 0), 0) / detectionsArray.length
-    : 0
-  const activeCameras = detectionsArray.filter(d => d).length
-
-  // Find camera with highest density
-  const hotCamera = detectionsArray.reduce((max, d) => {
-    if (!d) return max
-    if (!max || d.density > max.density) return d
-    return max
-  }, null)
-
-  return (
-    <div className="bg-gray-800 rounded-lg p-4 border border-gray-700">
-      <div className="flex justify-between items-center mb-4">
-        <h2 className="text-lg font-bold text-white flex items-center gap-2">
-          <span className="text-green-500">●</span> PlexIE OCC Dashboard
-        </h2>
-        <div className="flex items-center gap-3">
-          <span className="text-xs text-gray-500 bg-gray-700 px-2 py-1 rounded">
-            1 FPS detection
-          </span>
-          <div className={`px-2 py-1 rounded text-xs font-bold ${isConnected ? 'bg-green-900 text-green-400' : 'bg-red-900 text-red-400'}`}>
-            {isConnected ? 'CONNECTED' : 'DISCONNECTED'}
-          </div>
-        </div>
-      </div>
-      
-      <div className="grid grid-cols-5 gap-3 mb-4">
-        <div className="bg-gray-900 rounded-lg p-3 text-center border border-gray-700">
-          <div className="text-3xl font-bold text-green-400">{totalPeople}</div>
-          <div className="text-xs text-gray-500 mt-1">Total People</div>
-        </div>
-        <div className="bg-gray-900 rounded-lg p-3 text-center border border-gray-700">
-          <div className={`text-3xl font-bold ${maxDensity > 5 ? 'text-red-500 animate-pulse' : maxDensity > 3 ? 'text-yellow-400' : 'text-green-400'}`}>
-            {maxDensity.toFixed(1)}
-          </div>
-          <div className="text-xs text-gray-500 mt-1">Max Density</div>
-        </div>
-        <div className="bg-gray-900 rounded-lg p-3 text-center border border-gray-700">
-          <div className="text-3xl font-bold text-blue-400">{avgInference.toFixed(0)}</div>
-          <div className="text-xs text-gray-500 mt-1">Avg Latency (ms)</div>
-        </div>
-        <div className="bg-gray-900 rounded-lg p-3 text-center border border-gray-700">
-          <div className="text-3xl font-bold text-purple-400">{activeCameras}/5</div>
-          <div className="text-xs text-gray-500 mt-1">Active Cams</div>
-        </div>
-        <div className="bg-gray-900 rounded-lg p-3 text-center border border-gray-700">
-          <div className="text-2xl font-bold text-cyan-400 uppercase">{deviceType || '...'}</div>
-          <div className="text-xs text-gray-500 mt-1">AI Device</div>
-        </div>
-      </div>
-      
-      {/* Alert for high density */}
-      {maxDensity > 4 && hotCamera && (
-        <div className={`p-3 rounded-lg border ${maxDensity > 5 ? 'bg-red-900/40 border-red-500' : 'bg-yellow-900/40 border-yellow-500'}`}>
-          <div className="flex items-center gap-3">
-            <span className="text-3xl">{maxDensity > 5 ? '🚨' : '⚠️'}</span>
-            <div>
-              <div className={`font-bold text-lg ${maxDensity > 5 ? 'text-red-400' : 'text-yellow-400'}`}>
-                {maxDensity > 5 ? 'CRITICAL: Crowd Crush Risk!' : 'Warning: Elevated Density'}
-              </div>
-              <div className="text-sm text-gray-300">
-                Camera {hotCamera.camera_id + 1}: {hotCamera.density} p/m² | {hotCamera.count} people detected
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
-  )
-}
-
-// ============================================
 // Video Selector Modal
 // ============================================
 function VideoSelector({ videos, onSelect, onClose }) {
   return (
-    <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50">
-      <div className="bg-gray-800 rounded-lg p-6 w-96 max-h-[80vh] overflow-auto border border-gray-600">
-        <h3 className="text-xl font-bold text-white mb-4">Select Video Feed</h3>
-        <div className="space-y-2">
+    <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50">
+      <div className="bg-gray-800 rounded-lg p-6 max-w-md w-full border border-gray-700">
+        <h3 className="text-xl font-bold text-white mb-4">Select Video</h3>
+        <div className="space-y-2 max-h-96 overflow-y-auto">
           {videos.map(video => (
             <button
               key={video}
               onClick={() => onSelect(video)}
-              className="w-full text-left px-4 py-3 bg-gray-700 hover:bg-gray-600 rounded-lg text-white transition-colors"
+              className="w-full px-4 py-3 bg-gray-700 hover:bg-gray-600 rounded text-white text-left transition-colors"
             >
-              📹 {video}
+              {video}
             </button>
           ))}
         </div>
-        <button 
+        <button
           onClick={onClose}
-          className="mt-4 w-full py-2 bg-gray-700 hover:bg-gray-600 rounded text-gray-300"
+          className="mt-4 w-full px-4 py-2 bg-red-600 hover:bg-red-500 rounded text-white font-bold"
         >
           Cancel
         </button>
@@ -309,145 +224,41 @@ function VideoSelector({ videos, onSelect, onClose }) {
 // Main App
 // ============================================
 function App() {
-  const [connected, setConnected] = useState(false)
-  const [deviceType, setDeviceType] = useState(null)
-  const [videos, setVideos] = useState([])
-  const [cameras, setCameras] = useState({})
-  const [detections, setDetections] = useState({})
+  const [cameras, setCameras] = useState({}) // { cameraId: videoName }
+  const [plexieEnabled, setPlexieEnabled] = useState(true)
   const [selectingFor, setSelectingFor] = useState(null)
   const [resetKey, setResetKey] = useState(0)
-  const wsRef = useRef(null)
 
-  // Fetch videos
-  const fetchVideos = useCallback(async () => {
-    try {
-      const res = await fetch(`${API_URL}/api/videos`)
-      const data = await res.json()
-      setVideos(data.videos || [])
-    } catch (e) {
-      console.error('Failed to fetch videos:', e)
-    }
-  }, [])
-
-  // Fetch status
-  const fetchStatus = useCallback(async () => {
-    try {
-      const res = await fetch(`${API_URL}/api/status`)
-      const data = await res.json()
-      setDeviceType(data.device)
-      
-      // Sync camera states
-      const cams = {}
-      for (const cam of data.cameras || []) {
-        cams[cam.camera_id] = cam.video
-      }
-      setCameras(cams)
-    } catch (e) {
-      console.error('Failed to fetch status:', e)
-    }
-  }, [])
-
-  // WebSocket connection
-  const connectWS = useCallback(() => {
-    if (wsRef.current?.readyState === WebSocket.OPEN) return
-    
-    const ws = new WebSocket(WS_URL)
-    
-    ws.onopen = () => {
-      console.log('[WS] Connected')
-      setConnected(true)
-    }
-    
-    ws.onmessage = (e) => {
-      try {
-        const msg = JSON.parse(e.data)
-        if (msg.type === 'detection' && msg.data) {
-          setDetections(prev => ({
-            ...prev,
-            [msg.data.camera_id]: msg.data
-          }))
-        }
-      } catch (err) {
-        console.error('[WS] Parse error:', err)
-      }
-    }
-    
-    ws.onclose = () => {
-      console.log('[WS] Disconnected')
-      setConnected(false)
-      wsRef.current = null
-      setTimeout(connectWS, 2000)
-    }
-    
-    ws.onerror = (e) => {
-      console.error('[WS] Error:', e)
-      ws.close()
-    }
-    
-    wsRef.current = ws
-  }, [])
-
-  // Start camera
-  const startCamera = async (cameraId, videoName) => {
-    try {
-      const res = await fetch(`${API_URL}/api/camera/${cameraId}/start?video=${videoName}`, {
-        method: 'POST'
-      })
-      if (res.ok) {
-        setCameras(prev => ({ ...prev, [cameraId]: videoName }))
-      }
-    } catch (e) {
-      console.error('Failed to start camera:', e)
-    }
+  // Start camera with video
+  const startCamera = (cameraId, videoName) => {
+    setCameras(prev => ({ ...prev, [cameraId]: videoName }))
   }
 
   // Stop camera
-  const stopCamera = async (cameraId) => {
-    try {
-      await fetch(`${API_URL}/api/camera/${cameraId}/stop`, { method: 'POST' })
-      setCameras(prev => {
-        const next = { ...prev }
-        delete next[cameraId]
-        return next
-      })
-      setDetections(prev => {
-        const next = { ...prev }
-        delete next[cameraId]
-        return next
-      })
-    } catch (e) {
-      console.error('Failed to stop camera:', e)
-    }
+  const stopCamera = (cameraId) => {
+    setCameras(prev => {
+      const next = { ...prev }
+      delete next[cameraId]
+      return next
+    })
   }
 
-  // Auto-start all cameras
-  const autoStartAll = async () => {
-    for (let i = 0; i < Math.min(5, videos.length); i++) {
-      await startCamera(i, videos[i])
-      // Small delay between starts
-      await new Promise(r => setTimeout(r, 200))
+  // Auto-start all cameras with available videos
+  const autoStartAll = () => {
+    const newCameras = {}
+    for (let i = 0; i < Math.min(5, AVAILABLE_VIDEOS.length); i++) {
+      newCameras[i] = AVAILABLE_VIDEOS[i]
     }
+    setCameras(newCameras)
   }
 
   // Reset all cameras
-  const resetAll = async () => {
-    try {
-      await fetch(`${API_URL}/api/reset`, { method: 'POST' })
-      setDetections({})
-      setResetKey(prev => prev + 1)  // Force video remount
-    } catch (e) {
-      console.error('Failed to reset:', e)
-    }
+  const resetAll = () => {
+    setCameras({})
+    setResetKey(prev => prev + 1)  // Force video remount
   }
 
-  // Initialize
-  useEffect(() => {
-    fetchVideos()
-    fetchStatus()
-    connectWS()
-    
-    return () => wsRef.current?.close()
-  }, [fetchVideos, fetchStatus, connectWS])
+  const activeCameraCount = Object.keys(cameras).length
 
   return (
     <div className="min-h-screen bg-gray-900 text-white">
@@ -460,22 +271,33 @@ function App() {
             </div>
             <div>
               <h1 className="text-2xl font-bold">PlexIE OCC</h1>
-              <p className="text-xs text-gray-400">Operations Command Center v7.3</p>
+              <p className="text-xs text-gray-400">Operations Command Center v8.0</p>
             </div>
           </div>
           
           <div className="flex items-center gap-4">
             <button
+              onClick={() => setPlexieEnabled(!plexieEnabled)}
+              className={`px-4 py-2.5 rounded-lg text-sm font-bold transition-all shadow-lg flex items-center gap-2 ${
+                plexieEnabled 
+                  ? 'bg-green-600 hover:bg-green-500' 
+                  : 'bg-gray-600 hover:bg-gray-500'
+              }`}
+            >
+              <span className={`w-3 h-3 rounded-full ${plexieEnabled ? 'bg-green-300' : 'bg-gray-400'}`} />
+              PlexIE {plexieEnabled ? 'ON' : 'OFF'}
+            </button>
+            <button
               onClick={resetAll}
-              disabled={Object.keys(cameras).length === 0}
-              className="px-4 py-2.5 bg-yellow-600 hover:bg-yellow-500 disabled:bg-gray-600 rounded-lg text-sm font-bold transition-colors shadow-lg"
+              disabled={activeCameraCount === 0}
+              className="px-4 py-2.5 bg-yellow-600 hover:bg-yellow-500 disabled:bg-gray-700 disabled:text-gray-500 rounded-lg text-sm font-bold transition-colors shadow-lg"
             >
               ↻ Reset
             </button>
             <button
               onClick={autoStartAll}
-              disabled={videos.length === 0}
-              className="px-5 py-2.5 bg-green-600 hover:bg-green-500 disabled:bg-gray-600 rounded-lg text-sm font-bold transition-colors shadow-lg"
+              disabled={AVAILABLE_VIDEOS.length === 0}
+              className="px-5 py-2.5 bg-green-600 hover:bg-green-500 disabled:bg-gray-700 disabled:text-gray-500 rounded-lg text-sm font-bold transition-colors shadow-lg"
             >
               ▶ Start All Cameras
             </button>
@@ -485,13 +307,38 @@ function App() {
       
       {/* Main Content */}
       <main className="p-4 pb-16">
-        {/* Stats */}
-        <div className="mb-4">
-          <StatsPanel 
-            detections={detections} 
-            deviceType={deviceType}
-            isConnected={connected}
-          />
+        {/* Stats Panel */}
+        <div className="mb-4 bg-gray-800 rounded-lg p-4 border border-gray-700">
+          <div className="flex justify-between items-center mb-4">
+            <h2 className="text-lg font-bold text-white flex items-center gap-2">
+              <span className="text-green-500">●</span> PlexIE OCC Dashboard
+            </h2>
+            <div className="flex items-center gap-3">
+              <span className="text-xs text-gray-500 bg-gray-700 px-2 py-1 rounded">
+                Frontend Only Mode
+              </span>
+              <div className={`px-2 py-1 rounded text-xs font-bold ${plexieEnabled ? 'bg-green-900 text-green-400' : 'bg-gray-700 text-gray-400'}`}>
+                {plexieEnabled ? 'PlexIE ACTIVE' : 'PlexIE INACTIVE'}
+              </div>
+            </div>
+          </div>
+          
+          <div className="grid grid-cols-3 gap-3">
+            <div className="bg-gray-900 rounded-lg p-3 text-center border border-gray-700">
+              <div className="text-3xl font-bold text-green-400">{activeCameraCount}</div>
+              <div className="text-xs text-gray-500 mt-1">Active Cameras</div>
+            </div>
+            <div className="bg-gray-900 rounded-lg p-3 text-center border border-gray-700">
+              <div className="text-3xl font-bold text-blue-400">{AVAILABLE_VIDEOS.length}</div>
+              <div className="text-xs text-gray-500 mt-1">Available Videos</div>
+            </div>
+            <div className="bg-gray-900 rounded-lg p-3 text-center border border-gray-700">
+              <div className={`text-3xl font-bold ${plexieEnabled ? 'text-green-400' : 'text-gray-500'}`}>
+                {plexieEnabled ? 'ON' : 'OFF'}
+              </div>
+              <div className="text-xs text-gray-500 mt-1">PlexIE Status</div>
+            </div>
+          </div>
         </div>
         
         {/* Camera Grid */}
@@ -501,16 +348,21 @@ function App() {
               key={`${cameraId}-${resetKey}`}
               cameraId={cameraId}
               videoName={cameras[cameraId]}
-              detection={detections[cameraId]}
+              plexieEnabled={plexieEnabled}
               onStop={stopCamera}
             />
           ))}
           
           {/* Add camera button for empty slots */}
-          {Object.keys(cameras).length < 5 && (
+          {activeCameraCount < 5 && (
             <div 
-              onClick={() => setSelectingFor(Object.keys(cameras).length)}
-              className="bg-gray-800 rounded-lg border-2 border-dashed border-gray-600 hover:border-green-500 cursor-pointer transition-colors flex items-center justify-center aspect-video"
+              onClick={() => {
+                // Find first available camera slot
+                const nextSlot = [0,1,2,3,4].find(id => !cameras[id])
+                if (nextSlot !== undefined) setSelectingFor(nextSlot)
+              }}
+              className="bg-gray-800 rounded-lg border-2 border-dashed border-gray-600 hover:border-green-500 cursor-pointer transition-colors flex items-center justify-center"
+              style={{ aspectRatio: '16/10' }}
             >
               <div className="text-center">
                 <div className="text-4xl text-gray-500 mb-2">+</div>
@@ -520,14 +372,16 @@ function App() {
           )}
         </div>
         
-        {/* Backend not connected */}
-        {!connected && !deviceType && (
-          <div className="mt-6 bg-red-900/30 border border-red-500 rounded-lg p-4">
-            <h3 className="text-red-400 font-bold mb-2">⚠️ Backend Not Connected</h3>
-            <p className="text-gray-300 text-sm mb-2">Start the backend server:</p>
-            <code className="bg-gray-800 px-3 py-2 rounded text-green-400 text-sm block font-mono">
-              cd backend && python server_multicam.py
-            </code>
+        {/* Instructions */}
+        {activeCameraCount === 0 && (
+          <div className="mt-6 bg-blue-900/30 border border-blue-500 rounded-lg p-4">
+            <h3 className="text-blue-400 font-bold mb-2">🔹 Getting Started</h3>
+            <p className="text-gray-300 text-sm mb-2">
+              Click <strong>"Start All Cameras"</strong> to load all available videos, or click <strong>"+ Add Camera"</strong> to select individual videos.
+            </p>
+            <p className="text-gray-300 text-sm">
+              Toggle <strong>"PlexIE ON/OFF"</strong> to switch between annotated and clean video versions.
+            </p>
           </div>
         )}
       </main>
@@ -535,11 +389,10 @@ function App() {
       {/* Footer */}
       <footer className="fixed bottom-0 left-0 right-0 bg-gray-800 border-t border-gray-700 px-4 py-2">
         <div className="flex justify-between items-center text-xs text-gray-500">
-          <span>PlexIE OCC v7.3 - SSIG Stadium Safety System</span>
+          <span>PlexIE OCC v8.0 - Frontend Only Mode</span>
           <span>
-            Cameras: {Object.keys(cameras).length}/5 | 
-            Device: {deviceType?.toUpperCase() || '...'} | 
-            Pipeline: 1 FPS detection
+            Active: {activeCameraCount}/5 | 
+            Mode: {plexieEnabled ? 'Annotated' : 'Clean'} Videos
           </span>
         </div>
       </footer>
@@ -547,7 +400,7 @@ function App() {
       {/* Video Selector */}
       {selectingFor !== null && (
         <VideoSelector
-          videos={videos}
+          videos={AVAILABLE_VIDEOS}
           onSelect={(video) => {
             startCamera(selectingFor, video)
             setSelectingFor(null)
