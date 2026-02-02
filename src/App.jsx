@@ -135,6 +135,8 @@ function App() {
   
   // Store latest camera data
   const camDataRef = useRef({})
+  // Track last state change time for each alert (1.5 second cooldown)
+  const alertCooldowns = useRef({})
 
   // Generate smart actions based on conditions
   const generateActions = (camId, density, count, temp) => {
@@ -200,14 +202,31 @@ function App() {
           const updated = [...prev]
           const oldSeverity = updated[idx].severity.label
           const newSeverity = getSeverity(data.max_density)
-          // Regenerate actions if severity changed significantly
-          const severityChanged = oldSeverity !== newSeverity.label
+          
+          // Check if severity wants to change
+          let severityChanged = oldSeverity !== newSeverity.label
+          
+          // If severity wants to change, check 1.5 second cooldown
+          if (severityChanged) {
+            const now = Date.now()
+            const lastChange = alertCooldowns.current[camId] || 0
+            const timeSinceChange = now - lastChange
+            
+            if (timeSinceChange < 1500) {
+              // Cooldown not passed, don't change
+              severityChanged = false
+            } else {
+              // Cooldown passed, update timestamp
+              alertCooldowns.current[camId] = now
+            }
+          }
+          
           updated[idx] = { 
             ...updated[idx], 
             density: data.max_density, 
             count: data.count,
             temp,
-            severity: newSeverity,
+            severity: severityChanged ? newSeverity : updated[idx].severity,
             actions: severityChanged ? generateActions(camId, data.max_density, data.count, temp) : updated[idx].actions
           }
           return updated
@@ -282,6 +301,7 @@ function App() {
 
   const reset = () => {
     setCameras({}); camDataRef.current = {}; setAlerts([])
+    alertCooldowns.current = {} // Clear cooldown timestamps
     setHvac(HVAC_UNITS.map(u => ({ temp: u.baseTemp, boost: 0, target: 0 })))
     setGates(GATES.map(() => false)); setResetKey(k => k + 1)
   }
@@ -316,7 +336,16 @@ function App() {
     }))
   }
 
-  const dismiss = (id) => setAlerts(p => p.filter(a => a.id !== id))
+  const dismiss = (id) => {
+    setAlerts(p => {
+      const alert = p.find(a => a.id === id)
+      if (alert) {
+        // Clear cooldown for this camera
+        delete alertCooldowns.current[alert.camId]
+      }
+      return p.filter(a => a.id !== id)
+    })
+  }
 
   const crit = alerts.filter(a => a.severity.label === 'CRITICAL').length
 
