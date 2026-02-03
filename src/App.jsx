@@ -17,7 +17,7 @@ function getSeverity(density) {
   if (density >= 6) return { label: 'CRITICAL', color: 'red' }
   if (density >= 5) return { label: 'HIGH', color: 'orange' }
   if (density >= 4) return { label: 'ELEVATED', color: 'yellow' }
-  return { label: 'MODERATE', color: 'blue' }
+  return { label: 'NORMAL', color: 'blue' }
 }
 
 function Camera({ id, videoName, detectionData, plexieEnabled, onData, paused }) {
@@ -146,7 +146,7 @@ function App() {
   
   // Store latest camera data
   const camDataRef = useRef({})
-  // Track last state change time for each alert (4 second cooldown)
+  // Track last state change time for each alert (1.5 second cooldown)
   const alertCooldowns = useRef({})
 
   // Generate smart actions based on conditions
@@ -220,13 +220,13 @@ function App() {
           // Check if severity wants to change
           let severityChanged = oldSeverity !== newSeverity.label
           
-          // If severity wants to change, check 4 second cooldown
+          // If severity wants to change, check 1.5 second cooldown
           if (severityChanged) {
             const now = Date.now()
             const lastChange = alertCooldowns.current[camId] || 0
             const timeSinceChange = now - lastChange
             
-            if (timeSinceChange < 4000) {
+            if (timeSinceChange < 1500) {
               // Cooldown not passed, don't change
               severityChanged = false
             } else {
