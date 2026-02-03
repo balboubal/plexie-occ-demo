@@ -20,7 +20,7 @@ function getSeverity(density) {
   return { label: 'MODERATE', color: 'blue' }
 }
 
-function Camera({ id, videoName, detectionData, plexieEnabled, onData }) {
+function Camera({ id, videoName, detectionData, plexieEnabled, onData, paused }) {
   const videoRef = useRef(null)
   const canvasRef = useRef(null)
   const [data, setData] = useState(null)
@@ -94,6 +94,16 @@ function Camera({ id, videoName, detectionData, plexieEnabled, onData }) {
 
   useEffect(() => { if (videoRef.current && videoName) videoRef.current.play().catch(() => {}) }, [videoName])
 
+  useEffect(() => {
+    if (videoRef.current && videoName) {
+      if (paused) {
+        videoRef.current.pause()
+      } else {
+        videoRef.current.play().catch(() => {})
+      }
+    }
+  }, [paused, videoName])
+
   let border = 'border border-gray-700'
   if (data && plexieEnabled && data.max_density >= 3) {
     if (data.max_density >= 6) border = 'border-4 border-red-500'
@@ -132,10 +142,11 @@ function App() {
   const [hvac, setHvac] = useState(() => HVAC_UNITS.map(u => ({ temp: u.baseTemp, boost: 0, target: 0 })))
   const [aiHvac, setAiHvac] = useState(true)
   const [gates, setGates] = useState(() => GATES.map(() => false))
+  const [paused, setPaused] = useState(false)
   
   // Store latest camera data
   const camDataRef = useRef({})
-  // Track last state change time for each alert (1.5 second cooldown)
+  // Track last state change time for each alert (4 second cooldown)
   const alertCooldowns = useRef({})
 
   // Generate smart actions based on conditions
@@ -188,6 +199,9 @@ function App() {
   const handleCameraData = useCallback((camId, data) => {
     camDataRef.current[camId] = data
     
+    // Don't update alerts when paused or AI is off
+    if (paused || !plexieEnabled) return
+    
     // Get current HVAC temp for this zone
     const hvacIdx = camId % 4
     
@@ -206,13 +220,13 @@ function App() {
           // Check if severity wants to change
           let severityChanged = oldSeverity !== newSeverity.label
           
-          // If severity wants to change, check 1.5 second cooldown
+          // If severity wants to change, check 4 second cooldown
           if (severityChanged) {
             const now = Date.now()
             const lastChange = alertCooldowns.current[camId] || 0
             const timeSinceChange = now - lastChange
             
-            if (timeSinceChange < 1500) {
+            if (timeSinceChange < 4000) {
               // Cooldown not passed, don't change
               severityChanged = false
             } else {
@@ -246,7 +260,15 @@ function App() {
         }]
       })
     }
-  }, [hvac])
+  }, [hvac, paused, plexieEnabled])
+
+  // Clear alerts when AI is turned off
+  useEffect(() => {
+    if (!plexieEnabled) {
+      setAlerts([])
+      alertCooldowns.current = {}
+    }
+  }, [plexieEnabled])
 
   // HVAC simulation
   useEffect(() => {
@@ -359,6 +381,7 @@ function App() {
         <div className="flex items-center gap-2">
           {crit > 0 && <div className="px-3 py-1 bg-red-600 rounded text-sm font-bold animate-pulse">🚨 {crit}</div>}
           <button onClick={() => setPlexieEnabled(!plexieEnabled)} className={`px-3 py-1 rounded text-sm font-bold ${plexieEnabled ? 'bg-green-600' : 'bg-gray-600'}`}>AI {plexieEnabled ? 'ON' : 'OFF'}</button>
+          <button onClick={() => setPaused(!paused)} className={`px-3 py-1 rounded text-sm font-bold ${paused ? 'bg-orange-600' : 'bg-purple-600'}`}>{paused ? '▶ Resume' : '⏸ Pause'}</button>
           <button onClick={reset} className="px-3 py-1 bg-yellow-600 rounded text-sm font-bold">Reset</button>
           <button onClick={startAll} disabled={loading} className="px-3 py-1 bg-blue-600 rounded text-sm font-bold">{loading ? '...' : '▶ Start'}</button>
         </div>
@@ -367,7 +390,7 @@ function App() {
       <main className="p-3 flex gap-3">
         <div className="flex-1 space-y-3">
           <div className="grid grid-cols-3 gap-3">
-            {[0,1,2,3,4].map(id => <Camera key={`${id}-${resetKey}`} id={id} videoName={cameras[id]} detectionData={cameras[id] ? detectionData[cameras[id]] : null} plexieEnabled={plexieEnabled} onData={handleCameraData} />)}
+            {[0,1,2,3,4].map(id => <Camera key={`${id}-${resetKey}`} id={id} videoName={cameras[id]} detectionData={cameras[id] ? detectionData[cameras[id]] : null} plexieEnabled={plexieEnabled} onData={handleCameraData} paused={paused} />)}
             <div className="bg-gray-800 rounded-lg border border-gray-700">
               <div className="bg-gray-700 px-3 py-2 flex justify-between items-center">
                 <span className="font-bold text-sm">🌡️ HVAC</span>
