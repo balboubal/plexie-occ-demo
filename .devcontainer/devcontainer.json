@@ -8,7 +8,8 @@
   "portsAttributes": {
     "5173": {
       "label": "PlexIE OCC Demo",
-      "onAutoForward": "openPreview"
+      "onAutoForward": "openPreview",
+      "visibility": "public"
     }
   }
 }
