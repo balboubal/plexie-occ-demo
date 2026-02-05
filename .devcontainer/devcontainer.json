@@ -1,0 +1,31 @@
+{
+  "name": "PlexIE OCC Demo",
+  "image": "mcr.microsoft.com/devcontainers/universal:2",
+  "features": {},
+  
+  // Install dependencies when container is created
+  "postCreateCommand": "npm install",
+  
+  // Start the app when attaching to the codespace
+  "postAttachCommand": "bash ./launcher.sh",
+  
+  // Forward port 5173 (Vite default)
+  "forwardPorts": [5173],
+  
+  // Port configuration
+  "portsAttributes": {
+    "5173": {
+      "label": "PlexIE OCC Demo",
+      "onAutoForward": "openPreview"
+    }
+  },
+  
+  // Customize settings
+  "customizations": {
+    "vscode": {
+      "settings": {
+        "terminal.integrated.defaultProfile.linux": "bash"
+      }
+    }
+  }
+}
