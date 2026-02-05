@@ -1,7 +1,7 @@
 {
   "name": "PlexIE OCC Demo (Simple)",
 
-  "postStartCommand": "bash ./start-codespaces.sh",
+  "postAttachCommand": "bash ./start-codespaces.sh",
 
   "forwardPorts": [5173],
 
