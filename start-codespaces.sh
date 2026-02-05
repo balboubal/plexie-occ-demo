@@ -14,3 +14,12 @@ nohup npm run dev > /tmp/vite-dev.log 2>&1 &
 echo "Dev server started in background"
 echo "Check logs: tail -f /tmp/vite-dev.log"
 echo "Port 5173 will be auto-forwarded by Codespaces"
+
+
+# Wait until the port is actually listening
+until nc -z localhost 5173; do
+  sleep 0.5
+done
+
+# Force port to public
+gh codespace ports visibility 5173:public -c "$CODESPACE_NAME"
