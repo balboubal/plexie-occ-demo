@@ -1,15 +1,4 @@
 {
-  "name": "PlexIE OCC Demo (Simple)",
-  
-  "postCreateCommand": "npm install",
-  "postAttachCommand": "bash ./start-codespaces.sh",
-  
-  "forwardPorts": [5173],
-  
-  "portsAttributes": {
-    "5173": {
-      "label": "PlexIE OCC Demo",
-      "onAutoForward": "openPreview"
-    }
-  }
+  "image": "mcr.microsoft.com/devcontainers/universal:2",
+  "features": {},
 }
