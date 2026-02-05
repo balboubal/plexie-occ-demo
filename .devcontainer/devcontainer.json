@@ -1,4 +1,14 @@
 {
-  "image": "mcr.microsoft.com/devcontainers/universal:2",
-  "features": {},
+  "name": "PlexIE OCC Demo (Simple)",
+
+  "postAttachCommand": "bash ./start-codespaces.sh",
+  
+  "forwardPorts": [5173],
+  
+  "portsAttributes": {
+    "5173": {
+      "label": "PlexIE OCC Demo",
+      "onAutoForward": "openPreview"
+    }
+  }
 }
