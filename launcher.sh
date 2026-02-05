@@ -10,7 +10,6 @@ if ! command -v node &> /dev/null; then
     echo " ERROR: Node.js not found!"
     echo " Install from https://nodejs.org/"
     echo ""
-    read -p "Press Enter to continue..."
     exit 1
 fi
 
@@ -22,7 +21,5 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
 # Automatically send "3" to launch the demo
+# Note: In Codespaces, the launcher will run in the background
 echo "3" | node launcher.cjs
-
-echo ""
-read -p "Press Enter to continue..."

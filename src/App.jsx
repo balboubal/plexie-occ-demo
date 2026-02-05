@@ -150,6 +150,7 @@ function App() {
   const [aiHvac, setAiHvac] = useState(true)
   const [gates, setGates] = useState(() => GATES.map(() => false))
   const [paused, setPaused] = useState(false)
+  const [started, setStarted] = useState(false)
   
   // Store latest camera data
   const camDataRef = useRef({})
@@ -287,7 +288,9 @@ function App() {
 
   // HVAC simulation
   useEffect(() => {
+    if (!started) return // Don't run before Start is clicked
     const interval = setInterval(() => {
+      if (paused) return // Don't update HVAC when paused
       setHvac(prev => prev.map((h, i) => {
         let newBoost = h.boost
         if (h.boost < h.target) newBoost = Math.min(h.target, h.boost + 1)
@@ -298,12 +301,13 @@ function App() {
       }))
     }, 300)
     return () => clearInterval(interval)
-  }, [])
+  }, [started, paused])
 
   // AI HVAC
   useEffect(() => {
-    if (!aiHvac) return
+    if (!aiHvac || !started) return // Don't run before Start is clicked
     const interval = setInterval(() => {
+      if (paused) return // Don't update HVAC targets when paused
       setHvac(prev => prev.map((h, i) => {
         const camIds = i === 0 ? [0, 1] : i === 1 ? [2] : i === 2 ? [3] : [4]
         let maxD = 0
@@ -317,7 +321,7 @@ function App() {
       }))
     }, 1500)
     return () => clearInterval(interval)
-  }, [aiHvac])
+  }, [aiHvac, started, paused])
 
   const loadDet = async (name) => {
     try {
@@ -329,6 +333,7 @@ function App() {
 
   const startAll = async () => {
     setLoading(true)
+    setStarted(true) // Mark system as started
     for (let i = 0; i < VIDEOS.length; i++) {
       setCameras(p => ({ ...p, [i]: VIDEOS[i] }))
       if (!detectionData[VIDEOS[i]]) await loadDet(VIDEOS[i])
@@ -341,6 +346,7 @@ function App() {
     alertCooldowns.current = {} // Clear cooldown timestamps
     setHvac(HVAC_UNITS.map(u => ({ temp: u.baseTemp, boost: 0, target: 0 })))
     setGates(GATES.map(() => false)); setResetKey(k => k + 1)
+    setStarted(false) // Mark system as stopped
   }
 
   const approve = (alertId, actIdx) => {
