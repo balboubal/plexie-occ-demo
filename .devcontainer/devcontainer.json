@@ -2,7 +2,7 @@
   "name": "PlexIE OCC Demo (Simple)",
   
   "postCreateCommand": "npm install",
-  "postAttachCommand": "bash ./launcher.sh",
+  "postAttachCommand": "nohup bash ./launcher.sh > /tmp/launcher.log 2>&1 &",
   
   "forwardPorts": [5173],
   
