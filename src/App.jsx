@@ -13,6 +13,13 @@ const HVAC_UNITS = [
 
 const GATES = ['North Entry', 'North Exit', 'South Entry', 'South Exit', 'East Emergency', 'West Emergency']
 
+const SEVERITY_RANK = {
+  'NORMAL': 1,
+  'ELEVATED': 2,
+  'HIGH': 3,
+  'CRITICAL': 4
+}
+
 function getSeverity(density) {
   if (density >= 6) return { label: 'CRITICAL', color: 'red' }
   if (density >= 5) return { label: 'HIGH', color: 'orange' }
@@ -146,7 +153,7 @@ function App() {
   
   // Store latest camera data
   const camDataRef = useRef({})
-  // Track last state change time for each alert (1.5 second cooldown)
+  // Track last escalation time for each alert (1.5s cooldown before de-escalation)
   const alertCooldowns = useRef({})
 
   // Generate smart actions based on conditions
@@ -220,18 +227,26 @@ function App() {
           // Check if severity wants to change
           let severityChanged = oldSeverity !== newSeverity.label
           
-          // If severity wants to change, check 1.5 second cooldown
+          // Apply cooldown logic only when de-escalating
           if (severityChanged) {
-            const now = Date.now()
-            const lastChange = alertCooldowns.current[camId] || 0
-            const timeSinceChange = now - lastChange
+            const oldRank = SEVERITY_RANK[oldSeverity] || 0
+            const newRank = SEVERITY_RANK[newSeverity.label] || 0
+            const isDeEscalating = newRank < oldRank
             
-            if (timeSinceChange < 1500) {
-              // Cooldown not passed, don't change
-              severityChanged = false
+            if (isDeEscalating) {
+              // De-escalating: Check if 1.5s has passed since last ESCALATION
+              const now = Date.now()
+              const lastEscalation = alertCooldowns.current[camId] || 0
+              const timeSinceEscalation = now - lastEscalation
+              
+              if (timeSinceEscalation < 2500) {
+                // Not enough time since last escalation, don't de-escalate
+                severityChanged = false
+              }
+              // Don't update timestamp when de-escalating
             } else {
-              // Cooldown passed, update timestamp
-              alertCooldowns.current[camId] = now
+              // Escalating: Allow immediately and record timestamp
+              alertCooldowns.current[camId] = Date.now()
             }
           }
           
