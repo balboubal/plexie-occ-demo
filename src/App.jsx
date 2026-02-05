@@ -27,6 +27,27 @@ function getSeverity(density) {
   return { label: 'NORMAL', color: 'blue' }
 }
 
+/* --------- Safe play helper (defensive) ---------
+   Wraps video.play() and returns a promise. This avoids unhandled rejections
+   (autoplay blocks etc.). We use it wherever we call play().
+*/
+const safePlay = (videoEl) => {
+  if (!videoEl) return Promise.reject(new Error('no video element'))
+  try {
+    const p = videoEl.play()
+    if (p && typeof p.then === 'function') {
+      return p.catch((err) => {
+        // bubble rejection to caller
+        return Promise.reject(err)
+      })
+    }
+    return Promise.resolve()
+  } catch (err) {
+    return Promise.reject(err)
+  }
+}
+
+/* --------- Camera component (unchanged structure; small guards + safePlay) --------- */
 function Camera({ id, videoName, detectionData, plexieEnabled, onData, paused }) {
   const videoRef = useRef(null)
   const canvasRef = useRef(null)
@@ -55,59 +76,79 @@ function Camera({ id, videoName, detectionData, plexieEnabled, onData, paused })
           if (now - lastUpdate.current >= 500) {
             lastUpdate.current = now
             setData(fd)
-            onData(id, fd)
+            try { onData(id, fd) } catch (e) { /* defensive: don't let onData break rendering */ }
           }
-          drawOverlay(fd)
+          try { drawOverlay(fd) } catch (e) { /* swallow overlay errors to avoid app crash */ }
         }
       }
       animId = requestAnimationFrame(loop)
     }
     animId = requestAnimationFrame(loop)
     return () => cancelAnimationFrame(animId)
-  }, [videoName, detectionData, id, onData])
+  }, [videoName, detectionData, id, onData, plexieEnabled])
 
   const drawOverlay = (det) => {
     const canvas = canvasRef.current, video = videoRef.current
+    // Defensive guards: required metadata must exist
     if (!canvas || !video || !plexieEnabled || !detectionData?.grid_config) return
     const ctx = canvas.getContext('2d')
+    if (!ctx) return
     const rect = video.getBoundingClientRect()
     canvas.width = rect.width; canvas.height = rect.height
     ctx.clearRect(0, 0, canvas.width, canvas.height)
-    const gc = detectionData.grid_config
-    const vw = video.videoWidth || detectionData.video_info.process_width
-    const vh = video.videoHeight || detectionData.video_info.process_height
+    const gc = detectionData.grid_config || {}
+    const videoInfo = detectionData.video_info || {}
+    const vw = video.videoWidth || videoInfo.process_width || rect.width
+    const vh = video.videoHeight || videoInfo.process_height || rect.height
+    if (!vw || !vh) return
     const va = vw / vh, ca = rect.width / rect.height
     let rw, rh, ox, oy
     if (ca > va) { rh = rect.height; rw = rh * va; ox = (rect.width - rw) / 2; oy = 0 }
     else { rw = rect.width; rh = rw / va; ox = 0; oy = (rect.height - rh) / 2 }
-    const sx = rw / detectionData.video_info.process_width, sy = rh / detectionData.video_info.process_height
-    const cw = gc.cell_width * sx, ch = gc.cell_height * sy
-    if (det.grid) {
-      for (let r = 0; r < gc.rows; r++) for (let c = 0; c < gc.cols; c++) {
-        const d = (det.grid[r]?.[c] || 0) / gc.assumed_cell_area_m2
-        if (d >= 6) ctx.fillStyle = 'rgba(255,0,0,0.5)'
-        else if (d >= 4) ctx.fillStyle = 'rgba(255,165,0,0.4)'
-        else if (d >= 2) ctx.fillStyle = 'rgba(255,255,0,0.3)'
-        else continue
-        ctx.fillRect(ox + c * cw, oy + r * ch, cw, ch)
+    const sx = rw / (videoInfo.process_width || vw), sy = rh / (videoInfo.process_height || vh)
+    const cw = (gc.cell_width || 1) * sx, ch = (gc.cell_height || 1) * sy
+
+    if (det.grid && gc.rows && gc.cols && gc.assumed_cell_area_m2) {
+      for (let r = 0; r < gc.rows; r++) {
+        for (let c = 0; c < gc.cols; c++) {
+          const d = (det.grid?.[r]?.[c] || 0) / (gc.assumed_cell_area_m2 || 1)
+          if (d >= 6) ctx.fillStyle = 'rgba(255,0,0,0.5)'
+          else if (d >= 4) ctx.fillStyle = 'rgba(255,165,0,0.4)'
+          else if (d >= 2) ctx.fillStyle = 'rgba(255,255,0,0.3)'
+          else continue
+          ctx.fillRect(ox + c * cw, oy + r * ch, cw, ch)
+        }
       }
     }
-    if (det.points) { ctx.fillStyle = '#0f0'; det.points.forEach(p => { ctx.beginPath(); ctx.arc(ox + p[0] * sx, oy + p[1] * sy, 3, 0, Math.PI * 2); ctx.fill() }) }
+    if (det.points) {
+      ctx.fillStyle = '#0f0'
+      det.points.forEach(p => { 
+        if (p && p.length >= 2) ctx.beginPath(), ctx.arc(ox + p[0] * sx, oy + p[1] * sy, 3, 0, Math.PI * 2), ctx.fill()
+      })
+    }
+    // small info box
     ctx.fillStyle = 'rgba(0,0,0,0.8)'; ctx.fillRect(ox + 5, oy + 5, 105, 38)
-    ctx.font = 'bold 12px monospace'; ctx.fillStyle = '#0f0'; ctx.fillText('Count: ' + det.count, ox + 10, oy + 20)
-    ctx.fillStyle = det.max_density >= 6 ? '#f00' : det.max_density >= 4 ? '#fa0' : '#0f0'
-    ctx.fillText('Density: ' + det.max_density, ox + 10, oy + 36)
+    ctx.font = 'bold 12px monospace'; ctx.fillStyle = '#0f0'; ctx.fillText('Count: ' + (det.count ?? 0), ox + 10, oy + 20)
+    ctx.fillStyle = (det.max_density >= 6) ? '#f00' : (det.max_density >= 4 ? '#fa0' : '#0f0')
+    ctx.fillText('Density: ' + (det.max_density ?? 0), ox + 10, oy + 36)
   }
 
-  useEffect(() => { if (videoRef.current && videoName) videoRef.current.play().catch(() => {}) }, [videoName])
+  // Play when videoName changes (muted videos are usually allowed to autoplay)
+  useEffect(() => { 
+    const v = videoRef.current
+    if (v && videoName) {
+      safePlay(v).catch(() => { /* ignore; user will see paused video */ })
+    }
+  }, [videoName])
 
+  // Respond to paused prop safely
   useEffect(() => {
-    if (videoRef.current && videoName) {
-      if (paused) {
-        videoRef.current.pause()
-      } else {
-        videoRef.current.play().catch(() => {})
-      }
+    const v = videoRef.current
+    if (!v || !videoName) return
+    if (paused) {
+      try { v.pause() } catch (e) { /* ignore */ }
+    } else {
+      safePlay(v).catch(() => { /* ignore */ })
     }
   }, [paused, videoName])
 
@@ -130,7 +171,14 @@ function Camera({ id, videoName, detectionData, plexieEnabled, onData, paused })
       <div className="relative bg-black" style={{ aspectRatio: '16/10' }}>
         {videoName ? (
           <>
-            <video ref={videoRef} src={'/videos/clean/' + videoName} className="w-full h-full object-contain" loop muted playsInline />
+            <video
+              ref={videoRef}
+              src={'/videos/clean/' + videoName}
+              className="w-full h-full object-contain"
+              loop
+              muted
+              playsInline
+            />
             {plexieEnabled && <canvas ref={canvasRef} className="absolute inset-0 w-full h-full pointer-events-none" />}
           </>
         ) : <div className="flex items-center justify-center h-full text-gray-600">No Feed</div>}
@@ -139,6 +187,7 @@ function Camera({ id, videoName, detectionData, plexieEnabled, onData, paused })
   )
 }
 
+/* -------------------- App -------------------- */
 function App() {
   const [cameras, setCameras] = useState({})
   const [detectionData, setDetectionData] = useState({})
@@ -162,30 +211,22 @@ function App() {
     const actions = []
     const zone = ZONES[camId]
     
-    // Critical density - immediate crowd control needed
     if (density >= 6) {
       actions.push({ label: '🚨 Emergency crowd control - ' + zone, done: false })
       actions.push({ label: '🚪 Open all emergency exits - ' + zone, done: false })
       actions.push({ label: '📢 Urgent dispersal announcement', done: false })
       actions.push({ label: '🏥 Medical team on standby', done: false })
-    } 
-    // High density - proactive measures
-    else if (density >= 5) {
+    } else if (density >= 5) {
       actions.push({ label: '👮 Position security at ' + zone, done: false })
       actions.push({ label: '🚪 Pre-open auxiliary exits', done: false })
       actions.push({ label: '📢 Flow guidance announcement', done: false })
-    }
-    // Elevated - monitoring and mild intervention
-    else if (density >= 4) {
+    } else if (density >= 4) {
       actions.push({ label: '👁️ Enhanced monitoring - ' + zone, done: false })
       actions.push({ label: '📢 Gentle crowd guidance', done: false })
-    }
-    // Moderate
-    else {
+    } else {
       actions.push({ label: '👁️ Continue monitoring ' + zone, done: false })
     }
     
-    // Temperature-based actions
     if (temp >= 30) {
       actions.push({ label: '❄️ Emergency cooling +30%', done: false, hvac: camId % 4, boost: 30 })
       actions.push({ label: '💧 Deploy hydration stations', done: false })
@@ -195,7 +236,6 @@ function App() {
       actions.push({ label: '❄️ Boost ventilation +15%', done: false, hvac: camId % 4, boost: 15 })
     }
     
-    // Predictive warning for high counts
     if (count > 35 && density >= 4) {
       actions.push({ label: '⚠️ FORECAST: May reach critical in ~3 min', done: false, info: true })
     }
@@ -210,43 +250,34 @@ function App() {
     // Don't update alerts when paused or AI is off
     if (paused || !plexieEnabled) return
     
-    // Get current HVAC temp for this zone
     const hvacIdx = camId % 4
     
-    // IMMEDIATELY check if we need an alert
     if (data.max_density >= 2) {
       setAlerts(prev => {
         const temp = hvac[hvacIdx]?.temp || 28
         
-        // Already have alert for this camera? Update it
         const idx = prev.findIndex(a => a.camId === camId)
         if (idx >= 0) {
           const updated = [...prev]
           const oldSeverity = updated[idx].severity.label
           const newSeverity = getSeverity(data.max_density)
           
-          // Check if severity wants to change
           let severityChanged = oldSeverity !== newSeverity.label
           
-          // Apply cooldown logic only when de-escalating
           if (severityChanged) {
             const oldRank = SEVERITY_RANK[oldSeverity] || 0
             const newRank = SEVERITY_RANK[newSeverity.label] || 0
             const isDeEscalating = newRank < oldRank
             
             if (isDeEscalating) {
-              // De-escalating: Check if 1.5s has passed since last ESCALATION
               const now = Date.now()
               const lastEscalation = alertCooldowns.current[camId] || 0
               const timeSinceEscalation = now - lastEscalation
               
               if (timeSinceEscalation < 2500) {
-                // Not enough time since last escalation, don't de-escalate
                 severityChanged = false
               }
-              // Don't update timestamp when de-escalating
             } else {
-              // Escalating: Allow immediately and record timestamp
               alertCooldowns.current[camId] = Date.now()
             }
           }
@@ -261,9 +292,7 @@ function App() {
           }
           return updated
         }
-        // At max alerts? Don't add
         if (prev.length >= 5) return prev
-        // Create new alert with context-aware actions
         return [...prev, {
           id: Date.now() + camId,
           camId,
@@ -278,7 +307,6 @@ function App() {
     }
   }, [hvac, paused, plexieEnabled])
 
-  // Clear alerts when AI is turned off
   useEffect(() => {
     if (!plexieEnabled) {
       setAlerts([])
@@ -288,9 +316,9 @@ function App() {
 
   // HVAC simulation
   useEffect(() => {
-    if (!started) return // Don't run before Start is clicked
+    if (!started) return
     const interval = setInterval(() => {
-      if (paused) return // Don't update HVAC when paused
+      if (paused) return
       setHvac(prev => prev.map((h, i) => {
         let newBoost = h.boost
         if (h.boost < h.target) newBoost = Math.min(h.target, h.boost + 1)
@@ -305,9 +333,9 @@ function App() {
 
   // AI HVAC
   useEffect(() => {
-    if (!aiHvac || !started) return // Don't run before Start is clicked
+    if (!aiHvac || !started) return
     const interval = setInterval(() => {
-      if (paused) return // Don't update HVAC targets when paused
+      if (paused) return
       setHvac(prev => prev.map((h, i) => {
         const camIds = i === 0 ? [0, 1] : i === 1 ? [2] : i === 2 ? [3] : [4]
         let maxD = 0
@@ -383,7 +411,6 @@ function App() {
     setAlerts(p => {
       const alert = p.find(a => a.id === id)
       if (alert) {
-        // Clear cooldown for this camera
         delete alertCooldowns.current[alert.camId]
       }
       return p.filter(a => a.id !== id)
@@ -392,8 +419,23 @@ function App() {
 
   const crit = alerts.filter(a => a.severity.label === 'CRITICAL').length
 
+  /* Small CSS inserted to preserve desktop alerts-panel height but allow mobile flow.
+     We add bottom padding to root to avoid the fixed footer overlapping content on md+.
+  */
   return (
-    <div className="min-h-screen bg-gray-900 text-white">
+    <div className="min-h-screen bg-gray-900 text-white pb-16">
+      <style>{`
+        /* keep alerts panel full-height on desktop, flow on mobile */
+        @media (min-width: 768px) {
+          .alerts-panel { height: calc(100vh - 100px); }
+          .alerts-panel .alerts-scroll { height: calc(100% - 44px); overflow-y: auto; }
+        }
+        @media (max-width: 767px) {
+          .alerts-panel { height: auto; }
+          .alerts-panel .alerts-scroll { height: auto; overflow: visible; }
+        }
+      `}</style>
+
       <header className="bg-gray-800 border-b border-gray-700 px-4 py-2 flex justify-between items-center">
         <div className="flex items-center gap-3">
           <div className="w-8 h-8 bg-green-600 rounded flex items-center justify-center font-bold">P</div>
@@ -408,10 +450,22 @@ function App() {
         </div>
       </header>
 
-      <main className="p-3 flex gap-3">
+      {/* Main layout: stack vertically on small screens, horizontal on md+ (keeps desktop exact layout) */}
+      <main className="p-3 flex flex-col md:flex-row gap-3">
         <div className="flex-1 space-y-3">
-          <div className="grid grid-cols-3 gap-3">
-            {[0,1,2,3,4].map(id => <Camera key={`${id}-${resetKey}`} id={id} videoName={cameras[id]} detectionData={cameras[id] ? detectionData[cameras[id]] : null} plexieEnabled={plexieEnabled} onData={handleCameraData} paused={paused} />)}
+          {/* camera grid: responsive columns (mobile 1 column, desktop 3) */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            {[0,1,2,3,4].map(id => (
+              <Camera
+                key={`${id}-${resetKey}`}
+                id={id}
+                videoName={cameras[id]}
+                detectionData={cameras[id] ? detectionData[cameras[id]] : null}
+                plexieEnabled={plexieEnabled}
+                onData={handleCameraData}
+                paused={paused}
+              />
+            ))}
             <div className="bg-gray-800 rounded-lg border border-gray-700">
               <div className="bg-gray-700 px-3 py-2 flex justify-between items-center">
                 <span className="font-bold text-sm">🌡️ HVAC</span>
@@ -438,6 +492,7 @@ function App() {
               </div>
             </div>
           </div>
+
           <div className="bg-gray-800 rounded-lg border border-gray-700 p-3">
             <h3 className="font-bold text-sm mb-2">🚪 Gates</h3>
             <div className="grid grid-cols-3 gap-2">
@@ -446,14 +501,14 @@ function App() {
           </div>
         </div>
 
-        {/* ALERTS */}
-        <div className="w-[340px]">
-          <div className="bg-gray-800 rounded-lg border border-gray-700" style={{ height: 'calc(100vh - 100px)' }}>
+        {/* ALERTS - make it full-width on mobile, fixed-width on desktop */}
+        <div className="w-full md:w-[340px]">
+          <div className="bg-gray-800 rounded-lg border border-gray-700 alerts-panel">
             <div className="bg-gray-700 px-3 py-2 flex justify-between items-center">
               <span className="font-bold text-sm">⚠️ Alerts ({alerts.length}/5)</span>
               {alerts.length > 0 && <button onClick={() => setAlerts([])} className="text-xs text-gray-400">Clear</button>}
             </div>
-            <div className="p-2 overflow-y-auto" style={{ height: 'calc(100% - 44px)' }}>
+            <div className="p-2 alerts-scroll">
               {alerts.length === 0 ? (
                 <div className="text-center text-gray-500 py-8"><div className="text-3xl mb-2">✓</div>No alerts<div className="text-xs mt-1">Click Start</div></div>
               ) : alerts.map(a => {
@@ -496,7 +551,8 @@ function App() {
         </div>
       </main>
 
-      <footer className="fixed bottom-0 left-0 right-0 bg-gray-800 border-t border-gray-700 px-4 py-1 flex justify-between text-xs text-gray-500">
+      {/* Footer: fixed only on md+ so mobile can scroll vertically */}
+      <footer className="md:fixed bottom-0 left-0 right-0 bg-gray-800 border-t border-gray-700 px-4 py-1 flex justify-between text-xs text-gray-500">
         <span>v8.9 • HVAC: {aiHvac ? 'AUTO' : 'MANUAL'}</span>
         <span>Alerts: {alerts.length}</span>
       </footer>
