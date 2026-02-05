@@ -21,7 +21,8 @@ echo ""
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
-node launcher.cjs
+# Automatically send "3" to launch the demo
+echo "3" | node launcher.cjs
 
 echo ""
 read -p "Press Enter to continue..."
