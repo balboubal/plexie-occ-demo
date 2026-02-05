@@ -21,5 +21,5 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
 # Automatically send "3" to launch the demo
-# Note: In Codespaces, the launcher will run in the background
-echo "3" | node launcher.cjs
+# Using Codespaces-specific launcher (no auto-browser opening)
+echo "3" | node launcher-codespaces.cjs
