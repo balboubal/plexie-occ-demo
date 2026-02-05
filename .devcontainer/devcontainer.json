@@ -1,11 +1,5 @@
 {
-  "name": "PlexIE OCC Demo",
-  "image": "mcr.microsoft.com/devcontainers/javascript-node:1-20-bullseye",
-  "features": {
-    "ghcr.io/devcontainers/features/python:1": {
-      "version": "3.11"
-    }
-  },
+  "name": "PlexIE OCC Demo (Simple)",
   
   "postCreateCommand": "npm install",
   "postAttachCommand": "bash ./launcher.sh",
@@ -16,14 +10,6 @@
     "5173": {
       "label": "PlexIE OCC Demo",
       "onAutoForward": "openPreview"
-    }
-  },
-  
-  "customizations": {
-    "vscode": {
-      "settings": {
-        "terminal.integrated.defaultProfile.linux": "bash"
-      }
     }
   }
 }
