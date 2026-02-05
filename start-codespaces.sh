@@ -6,7 +6,7 @@ cd "$(dirname "${BASH_SOURCE[0]}")"
 
 # Start Vite in background and capture logs
 nohup npm run dev > /tmp/vite-dev.log 2>&1 &
-
+gh codespace ports visibility 5173:public -c "$CODESPACE_NAME"
 echo "Dev server started in background (logs → /tmp/vite-dev.log)"
 
 # Wait until the port is listening (timeout after 60s)
