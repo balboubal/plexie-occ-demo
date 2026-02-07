@@ -2,7 +2,7 @@
 
 **AI-Powered Venue Safety Platform Demo for SSIG Investor Presentations**
 
-Version 3.0 | January 2026
+Version 3.0 | February 2026
 
 ## ⚠️ Important: Video Files Required
 
