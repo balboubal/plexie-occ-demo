@@ -729,7 +729,7 @@ function App() {
         <div className="w-full md:w-[340px]">
           <div className="bg-gray-800 rounded-lg border border-gray-700 alerts-panel">
             <div className="bg-gray-700 px-3 py-2 flex justify-between items-center">
-              <span className="font-bold text-sm">⚠️ Alerts ({alerts.length}/5)</span>
+              <span className="font-bold text-sm">⚠️ Alerts ({alerts.length})</span>
               {alerts.length > 0 && <button onClick={() => setAlerts([])} className="text-xs text-gray-400">Clear</button>}
             </div>
             <div className="p-2 alerts-scroll">
