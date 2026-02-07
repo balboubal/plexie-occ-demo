@@ -475,17 +475,26 @@ function App() {
 
       {/* Splash Screen - Mobile Only */}
       {isMobile && showSplash && (
-        <div className="splash-overlay fixed inset-0 bg-black/80 z-50 flex flex-col items-center justify-center px-6">
-          <div className="text-center mb-8">
+        <div className="splash-overlay fixed inset-0 bg-black/80 z-50 flex flex-col px-6">
+          {/* Arrow pointing to Start button in top right */}
+          <div className="absolute top-16 right-6 flex flex-col items-end">
+            <div className="bounce-arrow text-6xl transform rotate-45">↗</div>
+            <div className="text-center mt-2 mr-4">
+              <p className="text-gray-300 text-base font-semibold">Tap here to</p>
+              <p className="text-blue-400 font-bold text-lg">Start the Demo</p>
+            </div>
+          </div>
+          
+          {/* Welcome message in center */}
+          <div className="flex-1 flex flex-col items-center justify-center text-center">
             <div className="text-4xl mb-4">👋</div>
             <h2 className="text-2xl font-bold mb-3">Welcome to PlexIE OCC</h2>
-            <p className="text-gray-300 text-lg mb-2">Tap the <span className="text-blue-400 font-bold">Start</span> button</p>
-            <p className="text-gray-400">to begin the demo</p>
+            <p className="text-gray-400 max-w-xs">This is a crowd monitoring demo. Click the Start button above to begin.</p>
           </div>
-          <div className="bounce-arrow text-6xl">↓</div>
+          
           <button 
             onClick={() => setShowSplash(false)} 
-            className="mt-12 px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded text-sm"
+            className="mb-8 self-center px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded text-sm"
           >
             Skip
           </button>
