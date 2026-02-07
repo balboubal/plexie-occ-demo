@@ -200,11 +200,22 @@ function App() {
   const [gates, setGates] = useState(() => GATES.map(() => false))
   const [paused, setPaused] = useState(false)
   const [started, setStarted] = useState(false)
+  const [isMobile, setIsMobile] = useState(false)
   
   // Store latest camera data
   const camDataRef = useRef({})
   // Track last escalation time for each alert (1.5s cooldown before de-escalation)
   const alertCooldowns = useRef({})
+
+  // Detect mobile screen size
+  useEffect(() => {
+    const mediaQuery = window.matchMedia('(max-width: 767px)')
+    setIsMobile(mediaQuery.matches)
+    
+    const handler = (e) => setIsMobile(e.matches)
+    mediaQuery.addEventListener('change', handler)
+    return () => mediaQuery.removeEventListener('change', handler)
+  }, [])
 
   // Generate smart actions based on conditions
   const generateActions = (camId, density, count, temp) => {
@@ -455,17 +466,21 @@ function App() {
         <div className="flex-1 space-y-3">
           {/* camera grid: responsive columns (mobile 1 column, desktop 3) */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-            {[0,1,2,3,4].map(id => (
-              <Camera
-                key={`${id}-${resetKey}`}
-                id={id}
-                videoName={cameras[id]}
-                detectionData={cameras[id] ? detectionData[cameras[id]] : null}
-                plexieEnabled={plexieEnabled}
-                onData={handleCameraData}
-                paused={paused}
-              />
-            ))}
+            {[0,1,2,3,4].map(id => {
+              // Skip North Stand (0) and West Wing (4) on mobile
+              if (isMobile && (id === 0 || id === 4)) return null
+              return (
+                <Camera
+                  key={`${id}-${resetKey}`}
+                  id={id}
+                  videoName={cameras[id]}
+                  detectionData={cameras[id] ? detectionData[cameras[id]] : null}
+                  plexieEnabled={plexieEnabled}
+                  onData={handleCameraData}
+                  paused={paused}
+                />
+              )
+            })}
             <div className="bg-gray-800 rounded-lg border border-gray-700">
               <div className="bg-gray-700 px-3 py-2 flex justify-between items-center">
                 <span className="font-bold text-sm">🌡️ HVAC</span>
@@ -473,6 +488,8 @@ function App() {
               </div>
               <div className="p-2 space-y-2">
                 {HVAC_UNITS.map((u, i) => {
+                  // Skip West HVAC (index 3) on mobile
+                  if (isMobile && i === 3) return null
                   const h = hvac[i], moving = Math.abs(h.boost - h.target) > 0.5
                   const tc = h.temp >= 29 ? 'text-red-400' : h.temp >= 26 ? 'text-yellow-400' : 'text-green-400'
                   return (
@@ -511,7 +528,9 @@ function App() {
             <div className="p-2 alerts-scroll">
               {alerts.length === 0 ? (
                 <div className="text-center text-gray-500 py-8"><div className="text-3xl mb-2">✓</div>No alerts<div className="text-xs mt-1">Click Start</div></div>
-              ) : alerts.map(a => {
+              ) : alerts
+                .filter(a => !isMobile || (a.zone !== 'North Stand' && a.zone !== 'West Wing'))
+                .map(a => {
                 const bg = { red: 'bg-red-950', orange: 'bg-orange-950', yellow: 'bg-yellow-950', blue: 'bg-blue-950' }[a.severity.color]
                 const bd = { red: 'border-red-500', orange: 'border-orange-500', yellow: 'border-yellow-500', blue: 'border-blue-500' }[a.severity.color]
                 const badge = { red: 'bg-red-600', orange: 'bg-orange-600', yellow: 'bg-yellow-600', blue: 'bg-blue-600' }[a.severity.color]
