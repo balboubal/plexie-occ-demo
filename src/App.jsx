@@ -201,10 +201,11 @@ function App() {
   const [paused, setPaused] = useState(false)
   const [started, setStarted] = useState(false)
   const [isMobile, setIsMobile] = useState(false)
+  const [showSplash, setShowSplash] = useState(true)
   
   // Store latest camera data
   const camDataRef = useRef({})
-  // Track last escalation time for each alert (1.5s cooldown before de-escalation)
+  // Track last escalation time for each alert (2.5s cooldown before de-escalation)
   const alertCooldowns = useRef({})
 
   // Detect mobile screen size
@@ -216,6 +217,14 @@ function App() {
     mediaQuery.addEventListener('change', handler)
     return () => mediaQuery.removeEventListener('change', handler)
   }, [])
+
+  // Auto-hide splash screen after 5 seconds
+  useEffect(() => {
+    if (showSplash && isMobile) {
+      const timer = setTimeout(() => setShowSplash(false), 5000)
+      return () => clearTimeout(timer)
+    }
+  }, [showSplash, isMobile])
 
   // Generate smart actions based on conditions
   const generateActions = (camId, density, count, temp) => {
@@ -373,6 +382,7 @@ function App() {
   const startAll = async () => {
     setLoading(true)
     setStarted(true) // Mark system as started
+    setShowSplash(false) // Hide splash when Start is clicked
     for (let i = 0; i < VIDEOS.length; i++) {
       setCameras(p => ({ ...p, [i]: VIDEOS[i] }))
       if (!detectionData[VIDEOS[i]]) await loadDet(VIDEOS[i])
@@ -445,7 +455,42 @@ function App() {
           .alerts-panel { height: auto; }
           .alerts-panel .alerts-scroll { height: auto; overflow: visible; }
         }
+        
+        /* Splash screen animations */
+        @keyframes fadeIn {
+          from { opacity: 0; }
+          to { opacity: 1; }
+        }
+        @keyframes bounce {
+          0%, 100% { transform: translateY(0); }
+          50% { transform: translateY(-10px); }
+        }
+        .splash-overlay {
+          animation: fadeIn 0.3s ease-in;
+        }
+        .bounce-arrow {
+          animation: bounce 1.5s ease-in-out infinite;
+        }
       `}</style>
+
+      {/* Splash Screen - Mobile Only */}
+      {isMobile && showSplash && (
+        <div className="splash-overlay fixed inset-0 bg-black/80 z-50 flex flex-col items-center justify-center px-6">
+          <div className="text-center mb-8">
+            <div className="text-4xl mb-4">👋</div>
+            <h2 className="text-2xl font-bold mb-3">Welcome to PlexIE OCC</h2>
+            <p className="text-gray-300 text-lg mb-2">Tap the <span className="text-blue-400 font-bold">Start</span> button</p>
+            <p className="text-gray-400">to begin the demo</p>
+          </div>
+          <div className="bounce-arrow text-6xl">↓</div>
+          <button 
+            onClick={() => setShowSplash(false)} 
+            className="mt-12 px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded text-sm"
+          >
+            Skip
+          </button>
+        </div>
+      )}
 
       <header className="bg-gray-800 border-b border-gray-700 px-4 py-2 flex justify-between items-center">
         <div className="flex items-center gap-3">
@@ -522,7 +567,7 @@ function App() {
         <div className="w-full md:w-[340px]">
           <div className="bg-gray-800 rounded-lg border border-gray-700 alerts-panel">
             <div className="bg-gray-700 px-3 py-2 flex justify-between items-center">
-              <span className="font-bold text-sm">⚠️ Alerts ({alerts.length})</span>
+              <span className="font-bold text-sm">⚠️ Alerts ({alerts.length}/5)</span>
               {alerts.length > 0 && <button onClick={() => setAlerts([])} className="text-xs text-gray-400">Clear</button>}
             </div>
             <div className="p-2 alerts-scroll">
