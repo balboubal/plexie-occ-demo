@@ -205,8 +205,12 @@ function App() {
   
   // Store latest camera data
   const camDataRef = useRef({})
-  // Track last escalation time for each alert (2.5s cooldown before de-escalation)
+  // Track last escalation time for each alert (4s cooldown before de-escalation)
   const alertCooldowns = useRef({})
+  // Track last de-escalation time for each alert (1s cooldown before escalation)
+  const escalationCooldowns = useRef({})
+  // Track action completion states for each camera - persists across severity changes
+  const actionStates = useRef({})
 
   // Detect mobile screen size
   useEffect(() => {
@@ -226,38 +230,140 @@ function App() {
     }
   }, [showSplash, isMobile])
 
-  // Generate smart actions based on conditions
+  // Define all possible action keys (zone-independent identifiers)
+  const ACTION_KEYS = {
+    // Crowd control actions
+    EMERGENCY_CROWD_CONTROL: 'emergency_crowd_control',
+    OPEN_EMERGENCY_EXITS: 'open_emergency_exits',
+    URGENT_DISPERSAL: 'urgent_dispersal',
+    MEDICAL_STANDBY: 'medical_standby',
+    POSITION_SECURITY: 'position_security',
+    PREOPEN_EXITS: 'preopen_exits',
+    FLOW_GUIDANCE: 'flow_guidance',
+    ENHANCED_MONITORING: 'enhanced_monitoring',
+    GENTLE_GUIDANCE: 'gentle_guidance',
+    CONTINUE_MONITORING: 'continue_monitoring',
+    // HVAC actions
+    EMERGENCY_COOLING: 'emergency_cooling',
+    HYDRATION_STATIONS: 'hydration_stations',
+    INCREASE_COOLING: 'increase_cooling',
+    BOOST_VENTILATION: 'boost_ventilation',
+    // Forecast
+    FORECAST_CRITICAL: 'forecast_critical'
+  }
+
+  // Initialize action states for a camera if not exists
+  const initActionStates = (camId) => {
+    if (!actionStates.current[camId]) {
+      actionStates.current[camId] = {}
+      // Initialize all possible actions as false
+      Object.values(ACTION_KEYS).forEach(key => {
+        actionStates.current[camId][key] = false
+      })
+    }
+  }
+
+  // Generate smart actions based on conditions, using persistent state
   const generateActions = (camId, density, count, temp) => {
+    initActionStates(camId)
     const actions = []
     const zone = ZONES[camId]
+    const states = actionStates.current[camId]
     
     if (density >= 6) {
-      actions.push({ label: '🚨 Emergency crowd control - ' + zone, done: false })
-      actions.push({ label: '🚪 Open all emergency exits - ' + zone, done: false })
-      actions.push({ label: '📢 Urgent dispersal announcement', done: false })
-      actions.push({ label: '🏥 Medical team on standby', done: false })
+      actions.push({ 
+        key: ACTION_KEYS.EMERGENCY_CROWD_CONTROL,
+        label: '🚨 Emergency crowd control - ' + zone, 
+        done: states[ACTION_KEYS.EMERGENCY_CROWD_CONTROL] 
+      })
+      actions.push({ 
+        key: ACTION_KEYS.OPEN_EMERGENCY_EXITS,
+        label: '🚪 Open all emergency exits - ' + zone, 
+        done: states[ACTION_KEYS.OPEN_EMERGENCY_EXITS] 
+      })
+      actions.push({ 
+        key: ACTION_KEYS.URGENT_DISPERSAL,
+        label: '📢 Urgent dispersal announcement', 
+        done: states[ACTION_KEYS.URGENT_DISPERSAL] 
+      })
+      actions.push({ 
+        key: ACTION_KEYS.MEDICAL_STANDBY,
+        label: '🏥 Medical team on standby', 
+        done: states[ACTION_KEYS.MEDICAL_STANDBY] 
+      })
     } else if (density >= 5) {
-      actions.push({ label: '👮 Position security at ' + zone, done: false })
-      actions.push({ label: '🚪 Pre-open auxiliary exits', done: false })
-      actions.push({ label: '📢 Flow guidance announcement', done: false })
+      actions.push({ 
+        key: ACTION_KEYS.POSITION_SECURITY,
+        label: '👮 Position security at ' + zone, 
+        done: states[ACTION_KEYS.POSITION_SECURITY] 
+      })
+      actions.push({ 
+        key: ACTION_KEYS.PREOPEN_EXITS,
+        label: '🚪 Pre-open auxiliary exits', 
+        done: states[ACTION_KEYS.PREOPEN_EXITS] 
+      })
+      actions.push({ 
+        key: ACTION_KEYS.FLOW_GUIDANCE,
+        label: '📢 Flow guidance announcement', 
+        done: states[ACTION_KEYS.FLOW_GUIDANCE] 
+      })
     } else if (density >= 4) {
-      actions.push({ label: '👁️ Enhanced monitoring - ' + zone, done: false })
-      actions.push({ label: '📢 Gentle crowd guidance', done: false })
+      actions.push({ 
+        key: ACTION_KEYS.ENHANCED_MONITORING,
+        label: '👁️ Enhanced monitoring - ' + zone, 
+        done: states[ACTION_KEYS.ENHANCED_MONITORING] 
+      })
+      actions.push({ 
+        key: ACTION_KEYS.GENTLE_GUIDANCE,
+        label: '📢 Gentle crowd guidance', 
+        done: states[ACTION_KEYS.GENTLE_GUIDANCE] 
+      })
     } else {
-      actions.push({ label: '👁️ Continue monitoring ' + zone, done: false })
+      actions.push({ 
+        key: ACTION_KEYS.CONTINUE_MONITORING,
+        label: '👁️ Continue monitoring ' + zone, 
+        done: states[ACTION_KEYS.CONTINUE_MONITORING] 
+      })
     }
     
     if (temp >= 30) {
-      actions.push({ label: '❄️ Emergency cooling +30%', done: false, hvac: camId % 4, boost: 30 })
-      actions.push({ label: '💧 Deploy hydration stations', done: false })
+      actions.push({ 
+        key: ACTION_KEYS.EMERGENCY_COOLING,
+        label: '❄️ Emergency cooling +30%', 
+        done: states[ACTION_KEYS.EMERGENCY_COOLING], 
+        hvac: camId % 4, 
+        boost: 30 
+      })
+      actions.push({ 
+        key: ACTION_KEYS.HYDRATION_STATIONS,
+        label: '💧 Deploy hydration stations', 
+        done: states[ACTION_KEYS.HYDRATION_STATIONS] 
+      })
     } else if (temp >= 28) {
-      actions.push({ label: '❄️ Increase cooling +20%', done: false, hvac: camId % 4, boost: 20 })
+      actions.push({ 
+        key: ACTION_KEYS.INCREASE_COOLING,
+        label: '❄️ Increase cooling +20%', 
+        done: states[ACTION_KEYS.INCREASE_COOLING], 
+        hvac: camId % 4, 
+        boost: 20 
+      })
     } else if (temp >= 26 && density >= 3) {
-      actions.push({ label: '❄️ Boost ventilation +15%', done: false, hvac: camId % 4, boost: 15 })
+      actions.push({ 
+        key: ACTION_KEYS.BOOST_VENTILATION,
+        label: '❄️ Boost ventilation +15%', 
+        done: states[ACTION_KEYS.BOOST_VENTILATION], 
+        hvac: camId % 4, 
+        boost: 15 
+      })
     }
     
     if (count > 35 && density >= 4) {
-      actions.push({ label: '⚠️ FORECAST: May reach critical in ~3 min', done: false, info: true })
+      actions.push({ 
+        key: ACTION_KEYS.FORECAST_CRITICAL,
+        label: '⚠️ FORECAST: May reach critical in ~3 min', 
+        done: states[ACTION_KEYS.FORECAST_CRITICAL], 
+        info: true 
+      })
     }
     
     return actions
@@ -287,18 +393,33 @@ function App() {
           if (severityChanged) {
             const oldRank = SEVERITY_RANK[oldSeverity] || 0
             const newRank = SEVERITY_RANK[newSeverity.label] || 0
+            const isEscalating = newRank > oldRank
             const isDeEscalating = newRank < oldRank
             
             if (isDeEscalating) {
+              // De-escalation: check 4 second cooldown since last escalation
               const now = Date.now()
               const lastEscalation = alertCooldowns.current[camId] || 0
               const timeSinceEscalation = now - lastEscalation
               
               if (timeSinceEscalation < 4000) {
                 severityChanged = false
+              } else {
+                // Allow de-escalation and record it
+                escalationCooldowns.current[camId] = Date.now()
               }
-            } else {
-              alertCooldowns.current[camId] = Date.now()
+            } else if (isEscalating) {
+              // Escalation: check 1 second cooldown since last de-escalation
+              const now = Date.now()
+              const lastDeEscalation = escalationCooldowns.current[camId] || 0
+              const timeSinceDeEscalation = now - lastDeEscalation
+              
+              if (timeSinceDeEscalation < 1000) {
+                severityChanged = false
+              } else {
+                // Allow escalation and record it
+                alertCooldowns.current[camId] = Date.now()
+              }
             }
           }
           
@@ -331,6 +452,8 @@ function App() {
     if (!plexieEnabled) {
       setAlerts([])
       alertCooldowns.current = {}
+      escalationCooldowns.current = {}
+      actionStates.current = {} // Clear action states when AI is turned off
     }
   }, [plexieEnabled])
 
@@ -392,7 +515,9 @@ function App() {
 
   const reset = () => {
     setCameras({}); camDataRef.current = {}; setAlerts([])
-    alertCooldowns.current = {} // Clear cooldown timestamps
+    alertCooldowns.current = {} // Clear de-escalation cooldown timestamps
+    escalationCooldowns.current = {} // Clear escalation cooldown timestamps
+    actionStates.current = {} // Clear all action states
     setHvac(HVAC_UNITS.map(u => ({ temp: u.baseTemp, boost: 0, target: 0 })))
     setGates(GATES.map(() => false)); setResetKey(k => k + 1)
     setStarted(false) // Mark system as stopped
@@ -404,6 +529,12 @@ function App() {
       const acts = [...a.actions]
       const act = acts[actIdx]
       if (act.info) return a // Info items can't be approved
+      
+      // Persist the action state
+      if (act.key && actionStates.current[a.camId]) {
+        actionStates.current[a.camId][act.key] = true
+      }
+      
       acts[actIdx] = { ...act, done: true }
       if (act.hvac !== undefined) {
         const boostAmt = act.boost || 20
@@ -418,6 +549,12 @@ function App() {
       if (a.id !== alertId) return a
       const acts = a.actions.map(act => {
         if (act.done || act.info) return act
+        
+        // Persist the action state
+        if (act.key && actionStates.current[a.camId]) {
+          actionStates.current[a.camId][act.key] = true
+        }
+        
         if (act.hvac !== undefined) {
           const boostAmt = act.boost || 20
           setHvac(h => h.map((x, i) => i === act.hvac ? { ...x, target: Math.min(50, x.target + boostAmt) } : x))
@@ -433,6 +570,8 @@ function App() {
       const alert = p.find(a => a.id === id)
       if (alert) {
         delete alertCooldowns.current[alert.camId]
+        delete escalationCooldowns.current[alert.camId]
+        delete actionStates.current[alert.camId] // Clear action states for this camera
       }
       return p.filter(a => a.id !== id)
     })
