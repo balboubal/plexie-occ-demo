@@ -465,17 +465,32 @@ function App() {
           0%, 100% { transform: translateY(0); }
           50% { transform: translateY(-10px); }
         }
+        @keyframes pulseGlow {
+          0%, 100% { 
+            box-shadow: 0 0 20px rgba(59, 130, 246, 0.8), 0 0 40px rgba(59, 130, 246, 0.5);
+            transform: scale(1);
+          }
+          50% { 
+            box-shadow: 0 0 30px rgba(59, 130, 246, 1), 0 0 60px rgba(59, 130, 246, 0.7);
+            transform: scale(1.05);
+          }
+        }
         .splash-overlay {
           animation: fadeIn 0.3s ease-in;
         }
         .bounce-arrow {
           animation: bounce 1.5s ease-in-out infinite;
         }
+        .highlight-start {
+          animation: pulseGlow 2s ease-in-out infinite;
+          position: relative;
+          z-index: 60;
+        }
       `}</style>
 
       {/* Splash Screen - Mobile Only */}
       {isMobile && showSplash && (
-        <div className="splash-overlay fixed inset-0 bg-black/80 z-50 flex flex-col px-6">
+        <div className="splash-overlay fixed inset-0 bg-black/80 z-50 flex flex-col px-6 pointer-events-none">
           {/* Arrow pointing to Start button in top right */}
           <div className="absolute top-16 right-6 flex flex-col items-end">
             <div className="bounce-arrow text-6xl transform rotate-45">↗</div>
@@ -491,13 +506,6 @@ function App() {
             <h2 className="text-2xl font-bold mb-3">Welcome to PlexIE OCC</h2>
             <p className="text-gray-400 max-w-xs">This is a crowd monitoring demo. Click the Start button above to begin.</p>
           </div>
-          
-          <button 
-            onClick={() => setShowSplash(false)} 
-            className="mb-8 self-center px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded text-sm"
-          >
-            Skip
-          </button>
         </div>
       )}
 
@@ -511,7 +519,13 @@ function App() {
           <button onClick={() => setPlexieEnabled(!plexieEnabled)} className={`px-3 py-1 rounded text-sm font-bold ${plexieEnabled ? 'bg-green-600' : 'bg-gray-600'}`}>AI {plexieEnabled ? 'ON' : 'OFF'}</button>
           <button onClick={() => setPaused(!paused)} className={`px-3 py-1 rounded text-sm font-bold ${paused ? 'bg-orange-600' : 'bg-purple-600'}`}>{paused ? '▶ Resume' : '⏸ Pause'}</button>
           <button onClick={reset} className="px-3 py-1 bg-yellow-600 rounded text-sm font-bold">Reset</button>
-          <button onClick={startAll} disabled={loading} className="px-3 py-1 bg-blue-600 rounded text-sm font-bold">{loading ? '...' : '▶ Start'}</button>
+          <button 
+            onClick={startAll} 
+            disabled={loading} 
+            className={`px-3 py-1 bg-blue-600 rounded text-sm font-bold ${isMobile && showSplash ? 'highlight-start' : ''}`}
+          >
+            {loading ? '...' : '▶ Start'}
+          </button>
         </div>
       </header>
 
