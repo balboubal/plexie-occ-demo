@@ -1,4 +1,4 @@
-# PlexIE Operations Command Center (OCC) Demo
+# PlexIE Operations Command Center (OCC) Demo Deployment 1.0
 
 **AI-Powered Venue Safety Platform Demo for SSIG Investor Presentations**
 
